@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ABILITY_INFO,
   abilityOf,
+  BOT_LEVEL_INFO,
   describeEvent,
   type Card as CardT,
   type GameEvent,
@@ -122,7 +123,9 @@ export function GameTable({ room, game, profile }: { room: RoomView; game: GameV
     const msg =
       room.status === 'FINISHED'
         ? null
-        : s.mode === 'ranked'
+        : room.solo
+          ? 'Leave this game against the CPU?'
+          : s.mode === 'ranked'
           ? `Leave the game? You forfeit your ${s.stake}-token stake and a bot plays your cards.`
           : 'Leave the game? A bot will take over your cards.';
     if (!msg || confirm(msg)) net.leave();
@@ -376,7 +379,9 @@ function Opponent({
   return (
     <div className={`opp ${active ? 'active' : ''} ${p.place ? 'out' : ''}`}>
       <div className="opp-head">
-        <span className="avatar">{member?.isBot ? '🤖' : p.name.slice(0, 1).toUpperCase()}</span>
+        <span className={`avatar ${member?.botLevel ? `lvl-${member.botLevel}` : ''}`} title={member?.botLevel ? `${BOT_LEVEL_INFO[member.botLevel].label} bot` : undefined}>
+          {member?.botLevel ? BOT_LEVEL_INFO[member.botLevel].icon : member?.isBot ? '🤖' : p.name.slice(0, 1).toUpperCase()}
+        </span>
         <div className="opp-name">
           <b>{p.name}</b>
           <span className="muted small">

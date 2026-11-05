@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { RoomView, UserProfile } from '@shead/shared';
+import { BOT_LEVEL_INFO, BOT_LEVELS, type BotLevel, type RoomView, type UserProfile } from '@shead/shared';
 import { net } from '../net';
 import { SettingsForm, rulesSummary } from './SettingsForm';
 
@@ -43,6 +43,7 @@ export function Lobby({ room, profile }: { room: RoomView; profile: UserProfile 
   const seated = room.members.length;
   const allReady = seated >= 2 && room.members.every((m) => m.ready || !m.connected);
   const [showRules, setShowRules] = useState(false);
+  const [botLevel, setBotLevel] = useState<BotLevel>('normal');
   const editable = isHost && !room.quickPlay;
 
   return (
@@ -95,6 +96,11 @@ export function Lobby({ room, profile }: { room: RoomView; profile: UserProfile 
                 {m.name}
                 {m.userId === profile.id && <span className="muted"> (you)</span>}
                 {m.isHost && <span className="badge">host</span>}
+                {m.isBot && m.botLevel && (
+                  <span className={`badge lvl-${m.botLevel}`}>
+                    {BOT_LEVEL_INFO[m.botLevel].icon} {BOT_LEVEL_INFO[m.botLevel].label}
+                  </span>
+                )}
                 {!m.connected && <span className="badge warn">offline</span>}
               </span>
               {ranked && m.tokens !== undefined && <span className="muted small">🪙 {m.tokens}</span>}
@@ -131,7 +137,16 @@ export function Lobby({ room, profile }: { room: RoomView; profile: UserProfile 
         {room.quickPlay && !room.autoStartAt && <div className="countdown muted">Waiting for more players…</div>}
         <div className="btn-row">
           {isHost && !ranked && !room.quickPlay && seated < room.settings.maxPlayers && (
-            <button onClick={() => net.addBot()}>🤖 Add bot</button>
+            <div className="add-bot">
+              <select value={botLevel} onChange={(e) => setBotLevel(e.target.value as BotLevel)} aria-label="Bot difficulty">
+                {BOT_LEVELS.map((l) => (
+                  <option key={l} value={l}>
+                    {BOT_LEVEL_INFO[l].icon} {BOT_LEVEL_INFO[l].label}
+                  </option>
+                ))}
+              </select>
+              <button onClick={() => net.addBot(botLevel)}>🤖 Add bot</button>
+            </div>
           )}
           <button className={me?.ready ? '' : 'primary'} onClick={() => net.ready(!me?.ready)} disabled={ranked && !me?.ready && profile.tokens < room.settings.stake}>
             {me?.ready ? 'Not ready' : ranked ? `Ready · bet 🪙 ${room.settings.stake}` : "I'm ready"}

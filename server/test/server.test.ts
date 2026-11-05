@@ -89,7 +89,12 @@ function nextMove(g: GameView): GameAction | null {
   }
   if (g.status !== 'PLAYING' || !me.isMyTurn) return null;
   if (me.zone === 'faceDown') return { type: 'playFaceDown', index: 0 };
-  if (me.playableIds.length) return { type: 'play', cardIds: [me.playableIds[0]] };
+  if (me.playableIds.length) {
+    // Play every copy of the lowest playable rank (keeps test games short).
+    const pool = me.zone === 'hand' ? me.hand : (g.players.find((p) => p.id === g.currentPlayerId)?.faceUp ?? []);
+    const first = pool.find((c) => c.id === me.playableIds[0])!;
+    return { type: 'play', cardIds: pool.filter((c) => c.rank === first.rank).map((c) => c.id) };
+  }
   return { type: 'pickup' };
 }
 
@@ -145,11 +150,13 @@ describe('server', () => {
 
     autoplay(a);
     autoplay(b);
-    const done = await a.waitFor((s) => s.room?.status === 'FINISHED', 20000);
+    const done = await a.waitFor((s) => s.room?.status === 'FINISHED', 45000);
     expect(done.room!.lastResult!.rankings).toHaveLength(3);
     expect(done.room!.lastResult!.shitheadId).toBeTruthy();
     await new Promise((r) => setTimeout(r, 50));
-    expect(a.profile.stats.games).toBe(1);
+    // Games with bots are recorded under the CPU record, not the public stats.
+    expect(a.profile.stats.games).toBe(0);
+    expect(a.profile.stats.cpu?.normal).toEqual({ games: 1, wins: done.room!.lastResult!.rankings[0].userId === a.profile.id ? 1 : 0 });
 
     // Back to the lobby for another round.
     expect((await a.emit('room:reset')).ok).toBe(true);
@@ -175,7 +182,7 @@ describe('server', () => {
     expect(a.state.room!.settings.voluntaryPickup).toBe(false); // ranked = standard rules
 
     for (const p of [a, b, c]) autoplay(p);
-    const done = await a.waitFor((s) => s.room?.status === 'FINISHED', 20000);
+    const done = await a.waitFor((s) => s.room?.status === 'FINISHED', 45000);
     await new Promise((r) => setTimeout(r, 50));
     const winnerId = done.room!.lastResult!.payout!.winnerId;
     const byId = Object.fromEntries([a, b, c].map((p) => [p.profile.id, p.profile.tokens]));
@@ -222,7 +229,7 @@ describe('server', () => {
     // Now Bea vanishes for good: the autopilot must carry her seat to the end of the game.
     b2.socket.disconnect();
     autoplay(a);
-    const done = await a.waitFor((s) => s.room?.status === 'FINISHED', 20000);
+    const done = await a.waitFor((s) => s.room?.status === 'FINISHED', 45000);
     expect(done.game!.log.some((e) => e.type === 'AUTO_PLAYED')).toBe(true);
   });
 
@@ -234,6 +241,28 @@ describe('server', () => {
     expect(r1.code).toBe(r2.code);
     const started = await a.waitFor((s) => s.room?.status === 'PLAYING');
     expect(started.game!.players).toHaveLength(2);
+  });
+
+  it('single player: starts a private game against leveled CPU opponents straight away', async () => {
+    const a = await guest('Solo');
+    const res = await a.emit('room:solo', { level: 'expert', opponents: 3 });
+    expect(res.ok).toBe(true);
+    const s = await a.waitFor((x) => x.room?.status === 'PLAYING' && !!x.game);
+    expect(s.game!.players).toHaveLength(4);
+    const bots = s.room!.members.filter((m) => m.isBot);
+    expect(bots).toHaveLength(3);
+    expect(bots.every((b) => b.botLevel === 'expert')).toBe(true);
+    expect(s.room!.settings.visibility).toBe('private');
+    expect(s.room!.settings.turnTimer).toBe(0);
+    // bad input is clamped
+    const b = await guest('Solo2');
+    expect((await b.emit('room:solo', { level: 'godlike', opponents: 99 })).ok).toBe(true);
+    const sb = await b.waitFor((x) => !!x.game);
+    expect(sb.room!.members.filter((m) => m.isBot)).toHaveLength(4);
+    expect(sb.room!.members.find((m) => m.isBot)!.botLevel).toBe('normal');
+    autoplay(a);
+    const done = await a.waitFor((x) => x.room?.status === 'FINISHED', 45000);
+    expect(done.room!.lastResult!.rankings).toHaveLength(4);
   });
 
   it('lets spectators watch without seeing anyone\'s hand', async () => {

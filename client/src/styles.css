@@ -1386,3 +1386,80 @@ select {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ───────────── CPU levels ───────────── */
+.levels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.level-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.8rem;
+  text-align: left;
+  padding: 0.8rem 0.9rem;
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.22);
+  border: 2px solid var(--line);
+}
+.level-card.on {
+  border-color: var(--lvl, var(--primary));
+  background: color-mix(in srgb, var(--lvl, var(--primary)) 18%, rgba(0, 0, 0, 0.25));
+}
+.lvl-icon {
+  font-size: 1.9rem;
+}
+.lvl-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.lvl-text small {
+  font-weight: 500;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.lvl-rec {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lvl-normal {
+  --lvl: #2ec27e;
+}
+.lvl-hard {
+  --lvl: #ff8c42;
+}
+.lvl-expert {
+  --lvl: #b388ff;
+}
+.badge.lvl-normal,
+.badge.lvl-hard,
+.badge.lvl-expert {
+  background: color-mix(in srgb, var(--lvl) 35%, transparent);
+}
+.avatar.lvl-normal,
+.avatar.lvl-hard,
+.avatar.lvl-expert {
+  background: color-mix(in srgb, var(--lvl) 55%, #102a20);
+  font-size: 1rem;
+}
+.solo-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+.add-bot {
+  display: flex;
+  gap: 0.3rem;
+  flex: 1 1 auto;
+}
+.add-bot select {
+  flex: 0 0 auto;
+}
+.add-bot button {
+  flex: 1;
+}

@@ -31,6 +31,17 @@ export const ABILITY_INFO: Record<Ability, { label: string; icon: string; descri
   burn: { label: 'Burn', icon: '🔥', description: 'Play on anything. Burns the whole pile and you go again.' },
 };
 
+// ──────────────────────────── Bots ───────────────────────────────
+
+export const BOT_LEVELS = ['normal', 'hard', 'expert'] as const;
+export type BotLevel = (typeof BOT_LEVELS)[number];
+
+export const BOT_LEVEL_INFO: Record<BotLevel, { label: string; icon: string; description: string }> = {
+  normal: { label: 'Normal', icon: '🙂', description: 'Plays casually and makes mistakes. Good for learning.' },
+  hard: { label: 'Hard', icon: '😈', description: 'Plays its cheapest cards first and saves specials for when they count.' },
+  expert: { label: 'Expert', icon: '🧠', description: 'Remembers every card it has seen, reads the odds and targets whoever is close to winning.' },
+};
+
 // ─────────────────────────── Settings ────────────────────────────
 
 export type GameMode = 'classic' | 'ranked';
@@ -81,6 +92,12 @@ export interface PlayerState {
   setupReady: boolean;
   /** 1-based finishing place, null while still playing. */
   place: number | null;
+  /**
+   * Ids of hand cards everyone at the table has seen go into this hand
+   * (picked up from the pile, or swapped in from the face-up row). Public knowledge —
+   * smart bots use it to "remember" like a human would. Never sent to clients.
+   */
+  known?: string[];
 }
 
 export type GameEventType =
@@ -122,6 +139,8 @@ export interface GameState {
   drawPile: Card[];
   discard: Card[]; // last element = top
   burnedCount: number;
+  /** Cards removed by burns (all were played face-up, so this is public). */
+  burned?: Card[];
   currentIdx: number;
   /** 1 = clockwise, -1 = anti-clockwise. */
   direction: 1 | -1;
@@ -202,6 +221,7 @@ export interface MemberView {
   userId: string;
   name: string;
   isBot: boolean;
+  botLevel?: BotLevel;
   isHost: boolean;
   ready: boolean;
   connected: boolean;
@@ -230,6 +250,7 @@ export interface RoomView {
   status: RoomStatus;
   hostId: string;
   quickPlay: boolean;
+  solo: boolean;
   settings: GameSettings;
   members: MemberView[];
   spectators: { userId: string; name: string }[];
@@ -261,6 +282,15 @@ export interface UserProfile {
   id: string;
   name: string;
   tokens: number;
-  stats: { games: number; wins: number; shitheads: number; rankedGames: number; rankedWins: number; tokensWon: number };
+  stats: {
+    games: number;
+    wins: number;
+    shitheads: number;
+    rankedGames: number;
+    rankedWins: number;
+    tokensWon: number;
+    /** Record in games that included CPU players, by the hardest bot at the table. Kept apart so bots can't farm the leaderboard. */
+    cpu?: Partial<Record<BotLevel, { games: number; wins: number }>>;
+  };
   nextDailyAt: number;
 }

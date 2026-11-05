@@ -45,6 +45,7 @@ export function createGame(
     faceDown: [],
     setupReady: false,
     place: null,
+    known: [],
   }));
   // Deal: 3 face-down, then 3 face-up, then the hand — one card at a time, round-robin.
   for (let i = 0; i < 3; i++) for (const p of players) p.faceDown.push(deck.pop()!);
@@ -58,6 +59,7 @@ export function createGame(
     drawPile: deck,
     discard: [],
     burnedCount: 0,
+    burned: [],
     currentIdx: 0,
     direction: 1,
     finishOrder: [],
@@ -169,7 +171,11 @@ function doSwap(state: GameState, playerId: string, handCardId: string, faceUpCa
   const hi = p.hand.findIndex((c) => c.id === handCardId);
   const fi = p.faceUp.findIndex((c) => c.id === faceUpCardId);
   if (hi < 0 || fi < 0) throw new GameError('You can only swap your own hand and face-up cards');
-  [p.hand[hi], p.faceUp[fi]] = [p.faceUp[fi], p.hand[hi]];
+  const toHand = p.faceUp[fi];
+  const toTable = p.hand[hi];
+  [p.hand[hi], p.faceUp[fi]] = [toHand, toTable];
+  // Everyone saw the face-up card go into the hand.
+  p.known = [...(p.known ?? []).filter((id) => id !== toTable.id), toHand.id];
   emit({ type: 'CARDS_EXCHANGED', playerId });
 }
 
@@ -225,6 +231,7 @@ function doPlay(state: GameState, playerId: string, cardIds: string[], emit: Emi
   if (!canPlayOn(rank, state.discard, state.settings)) throw new GameError('That card is too low for the pile');
 
   for (const c of played) source.splice(source.indexOf(c), 1);
+  if (p.known?.length) p.known = p.known.filter((id) => !cardIds.includes(id));
   emit({ type: 'CARD_PLAYED', playerId, cards: played });
   resolvePlay(state, p, played, emit, now);
 }
@@ -260,6 +267,7 @@ function doPickup(state: GameState, playerId: string, emit: Emit) {
 function takePile(state: GameState, p: PlayerState, emit: Emit, reason?: string) {
   const count = state.discard.length;
   p.hand.push(...state.discard);
+  p.known = [...(p.known ?? []), ...state.discard.map((c) => c.id)];
   state.discard = [];
   emit({ type: 'PILE_PICKED_UP', playerId: p.id, count, reason });
 }
@@ -287,6 +295,7 @@ function resolvePlay(state: GameState, p: PlayerState, played: Card[], emit: Emi
   if (ability === 'burn' || fourKind) {
     if (ability === 'burn') emit({ type: 'SPECIAL_ABILITY_TRIGGERED', playerId: p.id, ability });
     state.burnedCount += state.discard.length;
+    (state.burned ??= []).push(...state.discard);
     emit({ type: 'PILE_BURNED', playerId: p.id, count: state.discard.length, reason: fourKind && ability !== 'burn' ? 'four of a kind' : 'burn' });
     state.discard = [];
     extraTurn = true;

@@ -5,6 +5,7 @@ const MEDALS = ['', '🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
 
 export function Results({ room, result, profile }: { room: RoomView; result: GameResult; profile: UserProfile }) {
   const canReset = room.hostId === profile.id || room.quickPlay;
+  const soloLevel = room.solo ? room.members.find((m) => m.isBot)?.botLevel : undefined;
   const mins = Math.floor(result.durationMs / 60000);
   const secs = Math.floor((result.durationMs % 60000) / 1000);
   const shithead = result.rankings.find((r) => r.userId === result.shitheadId);
@@ -58,6 +59,11 @@ export function Results({ room, result, profile }: { room: RoomView; result: Gam
             </li>
           ))}
         </ol>
+        {soloLevel && (
+          <p className="muted small center">
+            Your record vs {soloLevel} bots: {profile.stats.cpu?.[soloLevel]?.wins ?? 0} wins in {profile.stats.cpu?.[soloLevel]?.games ?? 0} games
+          </p>
+        )}
         <p className="muted small center">
           Game length {mins}m {secs.toString().padStart(2, '0')}s
         </p>
@@ -65,7 +71,7 @@ export function Results({ room, result, profile }: { room: RoomView; result: Gam
         <div className="btn-col">
           {canReset ? (
             <button className="primary wide" onClick={() => net.reset()}>
-              🔁 Play again
+              🔁 {room.solo ? 'Rematch' : 'Play again'}
             </button>
           ) : (
             <p className="muted center small">Waiting for the host to start another round…</p>

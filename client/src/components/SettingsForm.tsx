@@ -14,9 +14,11 @@ interface Props {
   value: GameSettings;
   onChange?: (s: GameSettings) => void; // omitted = read-only
   tokens?: number;
+  /** Single-player: only the house rules (no mode, seats, visibility or spectators). */
+  solo?: boolean;
 }
 
-export function SettingsForm({ value: s, onChange, tokens }: Props) {
+export function SettingsForm({ value: s, onChange, tokens, solo }: Props) {
   const ro = !onChange;
   const ranked = s.mode === 'ranked';
   const set = (patch: Partial<GameSettings>) => onChange?.(sanitizeSettings({ ...s, ...patch }));
@@ -30,6 +32,7 @@ export function SettingsForm({ value: s, onChange, tokens }: Props) {
 
   return (
     <div className={`settings ${ro ? 'readonly' : ''}`}>
+      {!solo && (
       <div className="seg" role="radiogroup" aria-label="Mode">
         {(['classic', 'ranked'] as const).map((m) => (
           <button key={m} type="button" className={s.mode === m ? 'on' : ''} disabled={ro} onClick={() => set({ mode: m, stake: m === 'ranked' ? 50 : 0 })}>
@@ -37,6 +40,7 @@ export function SettingsForm({ value: s, onChange, tokens }: Props) {
           </button>
         ))}
       </div>
+      )}
       {ranked && (
         <div className="hint">
           Each player bets the stake. <b>The first player to go out takes the whole pot.</b> Ranked tables use the standard rules and no bots.
@@ -55,6 +59,7 @@ export function SettingsForm({ value: s, onChange, tokens }: Props) {
         </Row>
       )}
 
+      {!solo && (
       <Row label="Max players">
         <div className="chips">
           {[2, 3, 4, 5].map((n) => (
@@ -65,6 +70,9 @@ export function SettingsForm({ value: s, onChange, tokens }: Props) {
         </div>
       </Row>
 
+      )}
+
+      {!solo && (
       <Row label="Visibility">
         <div className="chips">
           {(['private', 'public'] as const).map((v) => (
@@ -74,6 +82,7 @@ export function SettingsForm({ value: s, onChange, tokens }: Props) {
           ))}
         </div>
       </Row>
+      )}
 
       {!ranked && (
         <Row label="Turn timer">
@@ -140,7 +149,7 @@ export function SettingsForm({ value: s, onChange, tokens }: Props) {
           </Row>
         </>
       )}
-      <Toggle label="Allow spectators" checked={s.allowSpectators} disabled={ro} onChange={(v) => set({ allowSpectators: v })} />
+      {!solo && <Toggle label="Allow spectators" checked={s.allowSpectators} disabled={ro} onChange={(v) => set({ allowSpectators: v })} />}
     </div>
   );
 }

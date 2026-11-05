@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react';
-import { defaultSettings, RANKED_STAKES, type GameSettings, type PublicRoomSummary, type UserProfile } from '@shead/shared';
+import {
+  BOT_LEVEL_INFO,
+  BOT_LEVELS,
+  defaultSettings,
+  RANKED_STAKES,
+  type BotLevel,
+  type GameSettings,
+  type PublicRoomSummary,
+  type UserProfile,
+} from '@shead/shared';
 import { net } from '../net';
 import { HowToPlay } from './HowToPlay';
 import { SettingsForm } from './SettingsForm';
 
-type View = 'menu' | 'online' | 'create' | 'join' | 'rules' | 'settings' | 'leaders';
+type View = 'menu' | 'online' | 'solo' | 'create' | 'join' | 'rules' | 'settings' | 'leaders';
 
 export function Home({ profile }: { profile: UserProfile }) {
   const [view, setView] = useState<View>('menu');
@@ -28,6 +37,9 @@ export function Home({ profile }: { profile: UserProfile }) {
           <button className="big primary" onClick={() => setView('online')}>
             <span className="ico">🌍</span> Play Online <small>Quick play · Ranked · Open tables</small>
           </button>
+          <button className="big" onClick={() => setView('solo')}>
+            <span className="ico">🤖</span> Play vs CPU <small>Single player · Normal, Hard or Expert bots</small>
+          </button>
           <button className="big" onClick={() => setView('create')}>
             <span className="ico">🎉</span> Create Party <small>Private table for friends</small>
           </button>
@@ -43,6 +55,7 @@ export function Home({ profile }: { profile: UserProfile }) {
         </nav>
       )}
       {view === 'online' && <PlayOnline profile={profile} onBack={back} />}
+      {view === 'solo' && <PlayCpu profile={profile} onBack={back} />}
       {view === 'create' && <CreateParty profile={profile} onBack={back} />}
       {view === 'join' && <JoinParty onBack={back} />}
       {view === 'rules' && (
@@ -190,6 +203,81 @@ function PlayOnline({ profile, onBack }: { profile: UserProfile; onBack: () => v
           ))}
         </ul>
       )}
+    </Panel>
+  );
+}
+
+const SOLO_KEY = 'shead.solo';
+
+function loadSolo(): { level: BotLevel; opponents: number } {
+  try {
+    const v = JSON.parse(localStorage.getItem(SOLO_KEY) ?? '{}');
+    return { level: BOT_LEVELS.includes(v.level) ? v.level : 'normal', opponents: [1, 2, 3, 4].includes(v.opponents) ? v.opponents : 2 };
+  } catch {
+    return { level: 'normal', opponents: 2 };
+  }
+}
+
+function PlayCpu({ profile, onBack }: { profile: UserProfile; onBack: () => void }) {
+  const [{ level, opponents }, setPick] = useState(loadSolo);
+  const [rules, setRules] = useState<GameSettings>(() => defaultSettings({ turnTimer: 0 }));
+  const [showRules, setShowRules] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const pick = (patch: Partial<{ level: BotLevel; opponents: number }>) => {
+    const next = { level, opponents, ...patch };
+    setPick(next);
+    try {
+      localStorage.setItem(SOLO_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
+  return (
+    <Panel title="Play vs CPU" onBack={onBack}>
+      <div className="levels" role="radiogroup" aria-label="Difficulty">
+        {BOT_LEVELS.map((l) => {
+          const rec = profile.stats.cpu?.[l];
+          return (
+            <button key={l} role="radio" aria-checked={level === l} className={`level-card lvl-${l} ${level === l ? 'on' : ''}`} onClick={() => pick({ level: l })}>
+              <span className="lvl-icon">{BOT_LEVEL_INFO[l].icon}</span>
+              <span className="lvl-text">
+                <b>{BOT_LEVEL_INFO[l].label}</b>
+                <small>{BOT_LEVEL_INFO[l].description}</small>
+              </span>
+              <span className="lvl-rec">{rec ? `${rec.wins}/${rec.games} won` : 'new'}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="row solo-row">
+        <span className="row-label">Opponents</span>
+        <div className="chips">
+          {[1, 2, 3, 4].map((n) => (
+            <button key={n} className={opponents === n ? 'on' : ''} onClick={() => pick({ opponents: n })}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="rules-box">
+        <button className="rules-toggle" onClick={() => setShowRules((v) => !v)} aria-expanded={showRules}>
+          <span>⚙️ House rules</span>
+          <span className="muted small">{showRules ? 'Hide' : 'Standard · no timer'}</span>
+        </button>
+        {showRules && <SettingsForm value={rules} onChange={setRules} solo />}
+      </div>
+      <button
+        className="primary wide"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          await net.solo(level, opponents, rules);
+          setBusy(false);
+        }}
+      >
+        ▶ Deal me in — vs {opponents} {BOT_LEVEL_INFO[level].label} bot{opponents > 1 ? 's' : ''}
+      </button>
+      <p className="muted small center">CPU games don't affect the leaderboard or your tokens. Your record against each level is saved.</p>
     </Panel>
   );
 }

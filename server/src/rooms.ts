@@ -11,6 +11,8 @@ import {
   MIN_PLAYERS,
   rankedSettings,
   sanitizeSettings,
+  BOT_LEVELS,
+  type BotLevel,
   type ClientState,
   type GameAction,
   type GameMode,
@@ -50,6 +52,7 @@ interface Member {
   userId: string;
   name: string;
   isBot: boolean;
+  botLevel?: BotLevel;
   ready: boolean;
   connected: boolean;
   /** Auto-played by the server. */
@@ -65,6 +68,8 @@ interface Room {
   hostId: string;
   settings: GameSettings;
   quickPlay: boolean;
+  /** Single-player table against CPU opponents. */
+  solo: boolean;
   status: RoomStatus;
   members: Member[];
   spectators: Map<string, string>;
@@ -85,7 +90,15 @@ interface Room {
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const BOT_NAMES = ['Ace Bot', 'Lucky Bot', 'Burnie', 'Skippy', 'Deuce', 'Queenie', 'Jack Bot', 'Sir Shuffle'];
+const BOT_NAMES: Record<BotLevel, string[]> = {
+  normal: ['Penny', 'Lucky', 'Sunny', 'Duke', 'Rosie', 'Milo'],
+  hard: ['Skippy', 'Burnie', 'Deuce', 'Queenie', 'Jax', 'Vera'],
+  expert: ['The Professor', 'Ace', 'Countess', 'Maverick', 'Oracle', 'Sir Shuffle'],
+};
+/** Strength the autopilot uses for humans who are away or out of time. */
+const AUTOPILOT_LEVEL: BotLevel = 'hard';
+const MAX_SOLO_OPPONENTS = 4;
+const levelOf = (v: unknown): BotLevel => ((BOT_LEVELS as readonly unknown[]).includes(v) ? (v as BotLevel) : 'normal');
 const rng = () => randomInt(0, 2 ** 32) / 2 ** 32;
 
 export class RoomManager {
@@ -184,6 +197,7 @@ export class RoomManager {
       hostId: userId,
       settings,
       quickPlay: !!opts.quickPlay,
+      solo: false,
       status: 'WAITING',
       members: [],
       spectators: new Map(),
@@ -325,27 +339,54 @@ export class RoomManager {
     return { ok: true };
   }
 
-  addBot(userId: string): Result {
+  addBot(userId: string, rawLevel?: unknown): Result {
     const room = this.roomOf(userId);
     if (!room) return { ok: false, error: 'You are not at a table' };
     if (room.hostId !== userId) return { ok: false, error: 'Only the host can add bots' };
     if (room.status !== 'WAITING') return { ok: false, error: 'The game has already started' };
     if (room.settings.mode === 'ranked') return { ok: false, error: 'Bots cannot play ranked games' };
     if (this.seated(room).length >= room.settings.maxPlayers) return { ok: false, error: 'The table is full' };
+    this.pushBot(room, levelOf(rawLevel));
+    this.afterChange(room);
+    return { ok: true };
+  }
+
+  private pushBot(room: Room, level: BotLevel) {
     const used = new Set(room.members.map((m) => m.name));
-    const name = BOT_NAMES.find((n) => !used.has(n)) ?? `Bot ${room.members.length + 1}`;
+    const pool = BOT_NAMES[level];
+    const name = pool.find((n) => !used.has(n)) ?? `${pool[0]} ${room.members.length + 1}`;
     room.members.push({
       userId: `bot:${randomInt(1e9).toString(36)}`,
       name,
       isBot: true,
+      botLevel: level,
       ready: true,
       connected: true,
       away: false,
       left: false,
       disconnectedAt: null,
     });
-    this.afterChange(room);
-    return { ok: true };
+  }
+
+  /** Single player: a private table against CPU opponents that starts straight away. */
+  solo(userId: string, raw: { level?: unknown; opponents?: unknown; settings?: unknown }): Result<{ code: string }> {
+    const level = levelOf(raw.level);
+    const n = Math.round(Number(raw.opponents));
+    const opponents = Number.isFinite(n) ? Math.min(MAX_SOLO_OPPONENTS, Math.max(1, n)) : 2;
+    const base = raw.settings && typeof raw.settings === 'object' ? (raw.settings as Record<string, unknown>) : { turnTimer: 0 };
+    const created = this.create(userId, { ...base, mode: 'classic', visibility: 'private', allowSpectators: false, maxPlayers: opponents + 1 });
+    if (!created.ok) return created;
+    const room = this.rooms.get(created.code)!;
+    room.solo = true;
+    room.name = `vs CPU · ${level[0].toUpperCase()}${level.slice(1)}`;
+    for (let i = 0; i < opponents; i++) this.pushBot(room, level);
+    this.member(room, userId)!.ready = true;
+    const started = this.startRoom(room);
+    if (!started.ok) {
+      this.afterChange(room);
+      return started;
+    }
+    return { ok: true, code: created.code };
   }
 
   kick(userId: string, targetId: unknown): Result {
@@ -436,6 +477,12 @@ export class RoomManager {
       room.spectators.delete(id);
       this.addMember(room, id, name);
     }
+    if (room.solo) {
+      // Single player: straight into the rematch.
+      const host = this.member(room, room.hostId);
+      if (host) host.ready = true;
+      if (this.startRoom(room).ok) return { ok: true };
+    }
     this.afterChange(room);
     return { ok: true };
   }
@@ -525,9 +572,21 @@ export class RoomManager {
     const g = room.game!;
     room.status = 'FINISHED';
     const ranked = room.settings.mode === 'ranked';
+    // Games with CPU players are recorded separately (by the strongest bot) so they can't pad the leaderboard.
+    const botLevels = room.members.filter((m) => m.isBot).map((m) => m.botLevel ?? 'normal');
+    const vsCpu = botLevels.length ? BOT_LEVELS.filter((l) => botLevels.includes(l)).at(-1)! : null;
     for (const p of g.players) {
       const m = this.member(room, p.id);
       if (!m || m.isBot) continue;
+      if (vsCpu) {
+        this.store.updateStats(p.id, (s) => {
+          const rec = ((s.cpu ??= {})[vsCpu] ??= { games: 0, wins: 0 });
+          rec.games++;
+          if (p.place === 1) rec.wins++;
+        });
+        this.pushProfile(p.id);
+        continue;
+      }
       this.store.updateStats(p.id, (s) => {
         s.games++;
         if (p.place === 1) s.wins++;
@@ -626,15 +685,18 @@ export class RoomManager {
         });
         return;
       }
-      room.deadline = room.setupStartedAt + this.t.setupTimeoutMs;
-      let at = room.deadline;
+      // Single player with no timer: take as long as you like to arrange your cards.
+      const relaxed = room.solo && g.settings.turnTimer === 0;
+      room.deadline = relaxed ? null : room.setupStartedAt + this.t.setupTimeoutMs;
+      let at = room.deadline ?? Infinity;
       for (const m of pending) if (!m.connected && m.disconnectedAt) at = Math.min(at, m.disconnectedAt + this.t.disconnectGraceMs);
+      if (at === Infinity) return;
       arm(at, () => {
         const t = Date.now();
         for (const m of pending) {
           const graceOver = !m.connected && m.disconnectedAt !== null && t >= m.disconnectedAt + this.t.disconnectGraceMs - 5;
           if (graceOver) m.away = true;
-          if (graceOver || t >= room.deadline! - 5) this.autoPlay(room, m.userId);
+          if (graceOver || (room.deadline !== null && t >= room.deadline - 5)) this.autoPlay(room, m.userId);
         }
         this.afterChange(room);
       });
@@ -675,6 +737,10 @@ export class RoomManager {
     }
   }
 
+  private levelFor(m: Member | undefined): BotLevel {
+    return m?.isBot ? (m.botLevel ?? 'normal') : AUTOPILOT_LEVEL;
+  }
+
   private autoPlay(room: Room, userId: string, reason?: string) {
     const g = room.game;
     if (!g) return;
@@ -683,12 +749,12 @@ export class RoomManager {
       const p = getPlayer(g, userId);
       const m = this.member(room, userId);
       for (let i = 0; i < 10 && p && !p.setupReady; i++) {
-        const a = m?.isBot || m?.away ? chooseBotAction(g, userId, rng) : ({ type: 'setupReady', ready: true } as const);
+        const a = m?.isBot || m?.away ? chooseBotAction(g, userId, rng, this.levelFor(m)) : ({ type: 'setupReady', ready: true } as const);
         if (!a || !applyAction(g, userId, a).ok) break;
       }
       return;
     }
-    const a = chooseBotAction(g, userId, rng);
+    const a = chooseBotAction(g, userId, rng, this.levelFor(this.member(room, userId)));
     if (!a) return;
     const res = applyAction(g, userId, a);
     if (res.ok && reason) logEvent(g, { type: 'AUTO_PLAYED', playerId: userId, reason });
@@ -701,6 +767,7 @@ export class RoomManager {
         userId: m.userId,
         name: m.name,
         isBot: m.isBot,
+        botLevel: m.botLevel,
         isHost: m.userId === room.hostId,
         ready: m.ready,
         connected: m.connected,
@@ -713,6 +780,7 @@ export class RoomManager {
       status: room.status,
       hostId: room.hostId,
       quickPlay: room.quickPlay,
+      solo: room.solo,
       settings: room.settings,
       members,
       spectators: [...room.spectators].map(([userId, name]) => ({ userId, name })),

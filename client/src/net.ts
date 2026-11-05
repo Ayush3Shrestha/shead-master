@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import type { ClientState, GameAction, GameMode, GameSettings, PublicRoomSummary, UserProfile } from '@shead/shared';
+import type { BotLevel, ClientState, GameAction, GameMode, GameSettings, PublicRoomSummary, UserProfile } from '@shead/shared';
 
 const TOKEN_KEY = 'shead.token';
 
@@ -162,7 +162,8 @@ class Net {
   leave = () => this.run('room:leave');
   ready = (ready: boolean) => this.run('room:ready', { ready });
   updateSettings = (settings: GameSettings) => this.run('room:settings', { settings });
-  addBot = () => this.run('room:addBot');
+  addBot = (level: BotLevel) => this.run('room:addBot', { level });
+  solo = (level: BotLevel, opponents: number, settings?: Partial<GameSettings>) => this.run('room:solo', { level, opponents, settings });
   kick = (userId: string) => this.run('room:kick', { userId });
   start = () => this.run('room:start');
   reset = () => this.run('room:reset');
