@@ -354,6 +354,8 @@ export function advance(state: GameState, steps: number) {
 }
 
 function pushLog(state: GameState, e: GameEvent) {
+  e.seq = (state.eventSeq ?? 0) + 1;
+  state.eventSeq = e.seq;
   state.log.push(e);
   if (state.log.length > LOG_LIMIT) state.log.splice(0, state.log.length - LOG_LIMIT);
 }

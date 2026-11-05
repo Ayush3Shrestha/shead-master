@@ -352,6 +352,7 @@ export class RoomManager {
     const room = this.roomOf(userId);
     if (!room) return { ok: false, error: 'You are not at a table' };
     if (room.hostId !== userId) return { ok: false, error: 'Only the host can remove players' };
+    if (room.quickPlay) return { ok: false, error: 'Matchmade tables have no kicking' };
     const m = typeof targetId === 'string' ? this.member(room, targetId) : undefined;
     if (!m || m.userId === userId) return { ok: false, error: 'Unknown player' };
     if (room.status === 'PLAYING') {

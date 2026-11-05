@@ -36,7 +36,7 @@ interface Client {
 async function guest(name: string, token?: string): Promise<Client> {
   if (!token) {
     const res = await fetch(`${url}/api/auth/guest`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
-    const body = await res.json();
+    const body = (await res.json()) as { token: string };
     token = body.token as string;
   }
   const socket = connect(url, { auth: { token }, transports: ['websocket'], forceNew: true });

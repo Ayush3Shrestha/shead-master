@@ -102,6 +102,8 @@ export type GameEventType =
 
 export interface GameEvent {
   type: GameEventType;
+  /** Monotonic sequence number within a game, so clients can spot new events. */
+  seq?: number;
   playerId?: string;
   /** Public cards involved (played / revealed). */
   cards?: Card[];
@@ -130,6 +132,7 @@ export interface GameState {
   version: number;
   turnNumber: number;
   log: GameEvent[];
+  eventSeq?: number;
   startedAt: number;
   finishedAt: number | null;
 }
