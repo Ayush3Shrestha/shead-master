@@ -1,0 +1,13 @@
+{
+  "name": "Shithead — Card Game",
+  "short_name": "Shithead",
+  "description": "The classic shedding card game. Play online with 2–5 friends.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b2e22",
+  "theme_color": "#0f3d2e",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
